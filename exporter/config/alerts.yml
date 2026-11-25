@@ -1,0 +1,107 @@
+groups:
+  - name: cgw
+    rules:
+      - alert: CgwGatewayUnreachable
+        expr: cgw_gateway_up == 0
+        for: 1m
+        labels:
+          severity: critical
+        annotations:
+          summary: "cgw-exporter 取不到网关快照"
+          description: "网关可能已停止，或快照端点不可用；此时 local/w1 的业务指标同时缺失。"
+
+      - alert: CgwNodeDown
+        expr: cgw_node_up == 0
+        for: 30s
+        labels:
+          severity: critical
+        annotations:
+          summary: "Docker 节点 {{ $labels.node }} 不可用"
+          description: "网关探测失败（含 TCP/TLS/dockerd 响应）。结合 cgw_node_probe_failures 的 reason 判断是证书、网络还是守护进程。"
+
+      - alert: CgwCreateFailureRate
+        expr: |
+          sum(rate(cgw_http_requests_total{action="create",result="error"}[5m]))
+            / clamp_min(sum(rate(cgw_http_requests_total{action="create"}[5m])), 0.001) > 0.05
+        for: 5m
+        labels:
+          severity: warning
+        annotations:
+          summary: "创建容器失败率 > 5%"
+          description: "按 error_code 下钻 cgw_http_request_errors_total 定位原因（配额、端口、镜像、节点）。"
+
+      - alert: CgwNodeTaskSaturation
+        expr: cgw_node_assigned / clamp_min(cgw_node_capacity, 1) > 0.85
+        for: 10m
+        labels:
+          severity: warning
+        annotations:
+          summary: "节点 {{ $labels.node }} 并发占用 > 85%"
+          description: "接近 gateway.node-max-tasks，后续创建会被拒绝。"
+
+      - alert: CgwPortPoolHigh
+        expr: cgw_port_pool_used / clamp_min(cgw_port_pool_capacity, 1) > 0.85
+        for: 10m
+        labels:
+          severity: warning
+        annotations:
+          summary: "节点 {{ $labels.node }} 端口池占用 > 85%"
+
+      - alert: CgwStreamSaturation
+        expr: cgw_node_active_streams / clamp_min(cgw_node_stream_capacity, 1) > 0.85
+        for: 5m
+        labels:
+          severity: warning
+        annotations:
+          summary: "节点 {{ $labels.node }} SSE 流并发 > 85%"
+
+      - alert: CgwExecTimeouts
+        expr: sum(rate(cgw_exec_timeouts_total[5m])) > 0.02
+        for: 5m
+        labels:
+          severity: warning
+        annotations:
+          summary: "exec 超时速率偏高（> 1.2 次/分钟）"
+
+      - alert: CgwExecTruncationRate
+        expr: |
+          sum(rate(cgw_exec_output_truncated_total[5m]))
+            / clamp_min(sum(rate(cgw_exec_total[5m])), 0.001) > 0.05
+        for: 10m
+        labels:
+          severity: info
+        annotations:
+          summary: "exec 输出被截断的比例 > 5%"
+
+      - alert: CgwJobStale
+        expr: time() - cgw_job_last_success_timestamp_seconds{task="ttl_reaper"} > 300
+        for: 5m
+        labels:
+          severity: warning
+        annotations:
+          summary: "TTL 回收任务超过 5 分钟未成功"
+          description: "过期容器不再被清理，可能导致配额与端口耗尽。"
+
+      - alert: CgwAuditWriteFailures
+        expr: increase(cgw_audit_write_failures_total[10m]) > 0
+        labels:
+          severity: critical
+        annotations:
+          summary: "网关审计日志写盘失败"
+          description: "审计已降级为仅应用日志，合规数据正在丢失。"
+
+      - alert: CgwExporterScrapeFailing
+        expr: rate(cgw_exporter_scrapes_total{result="error"}[5m]) > 0
+        for: 5m
+        labels:
+          severity: warning
+        annotations:
+          summary: "cgw-exporter 连续抓取上游失败"
+
+      - alert: CgwExporterSlow
+        expr: histogram_quantile(0.9, sum(rate(cgw_exporter_scrape_duration_seconds_bucket[5m])) by (le)) > 5
+        for: 10m
+        labels:
+          severity: info
+        annotations:
+          summary: "cgw-exporter 抓取耗时 p90 > 5s"

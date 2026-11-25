@@ -1,0 +1,142 @@
+# syntax=docker/dockerfile:1
+#
+# 沙箱运行时镜像 sandbox-runtime:2026.1021（Ubuntu 24.04 LTS）
+#
+# 定位：面向办公文档处理 + 浏览器自动化的通用执行沙箱，构建期装全，运行期零安装。
+# 延续 2026.10 镜像的落地约定（与网关 GATEWAY_* 配置一一对应）：
+#   - 网关以 User=1000:1000 运行           -> 镜像内所有运行期可写目录归到 /workspace
+#   - 只读 rootfs + /tmp(tmpfs 32M)        -> HOME/TMPDIR 指向 /workspace，不依赖 /tmp
+#   - /workspace 由宿主 bind 挂载（可写）   -> go/npm/nuget/pip 缓存全部落这里
+#   - 未设置 shm-size（默认 64M）          -> chromium 必须带 --disable-dev-shm-usage 启动
+#   - 非 root 下 Chrome setuid sandbox 不可用 -> 需 chromiumSandbox:false / --no-sandbox
+#
+# 构建（在网关本机节点上，约 15~25 分钟）：
+#   docker build -t sandbox-runtime:2026.1021 -f /root/container-gateway/sandbox/Dockerfile.2026.1021 /root/container-gateway/sandbox
+#
+# 组件：python3.12(系统自带) / Node 22 / Go 1.26 / dotnet-sdk 10.0 / Playwright 1.56 + Chromium
+#       + 9 个办公库 + git ripgrep jq yq(v4) tmux gcc g++ make
+#
+# 出网：构建期与运行期均需互联网（apt/pypi/npm/playwright CDN 已配国内镜像；
+#       运行期依赖网关 networkMode=bridge，不做 egress 限制）。
+
+FROM ubuntu:24.04
+
+ARG NODE_VERSION=22.23.2
+ARG GO_VERSION=1.26.7
+ARG PLAYWRIGHT_VERSION=1.56.0
+ARG YQ_VERSION=4.54.1
+
+ENV DEBIAN_FRONTEND=noninteractive \
+    LANG=C.UTF-8 \
+    LC_ALL=C.UTF-8 \
+    TZ=Asia/Shanghai
+
+# 先建 /workspace 再设 HOME/TMPDIR：apt/dpkg 的 postinst 依赖 TMPDIR 可写，
+# 且 dotnet/gradle 等安装脚本会读 HOME。运行时该目录被宿主 bind 覆盖。
+RUN mkdir -p /workspace/input /workspace/out /workspace/.cache
+
+ENV HOME=/workspace \
+    TMPDIR=/workspace
+
+# ---------------------------------------------------------------- 基础工具
+# 默认使用镜像内的上游 apt 源；仅为兼容无 IPv6 出口的环境强制 apt 使用 IPv4。
+RUN set -eux; \
+    printf 'Acquire::ForceIPv4 "true";\nAcquire::Retries "3";\n' > /etc/apt/apt.conf.d/99force-ipv4; \
+    apt-get update; \
+    apt-get install -y --no-install-recommends \
+        ca-certificates curl wget xz-utils gnupg \
+        git unzip zip jq less procps tmux \
+        build-essential pkg-config ripgrep \
+        python3 python3-pip python3-venv python3-dev \
+        libicu74; \
+    rm -rf /var/lib/apt/lists/*
+
+# ---------------------------------------------------------------- Python 办公库
+# pymupdf 用 cp311-abi3-manylinux_2_28 轮子，cp312/glibc2.39 直接可用，无需编译。
+# 使用 PyPI 默认源；如需加速，由构建环境自行配置 pip 源。
+RUN python3 -m pip install --no-cache-dir --break-system-packages \
+        python-pptx openpyxl xlsxwriter python-docx \
+        pypdf pdfplumber pymupdf reportlab xlrd
+
+# ---------------------------------------------------------------- Node 22
+# Ubuntu 24.04 官方源只有 nodejs 18，用官方二进制包（走 npmmirror 加速）。
+RUN set -eux; \
+    curl -fsSL "https://npmmirror.com/mirrors/node/v${NODE_VERSION}/node-v${NODE_VERSION}-linux-x64.tar.xz" \
+      -o /tmp/node.tar.xz; \
+    mkdir -p /usr/local/lib/nodejs; \
+    tar -xJf /tmp/node.tar.xz -C /usr/local/lib/nodejs --strip-components=1; \
+    rm -f /tmp/node.tar.xz; \
+    ln -sf /usr/local/lib/nodejs/bin/node /usr/local/bin/node; \
+    ln -sf /usr/local/lib/nodejs/bin/npm  /usr/local/bin/npm; \
+    ln -sf /usr/local/lib/nodejs/bin/npx  /usr/local/bin/npx; \
+    node -v; npm -v
+
+ENV PATH=/usr/local/lib/nodejs/bin:$PATH \
+    npm_config_registry=https://registry.npmmirror.com \
+    npm_config_cache=/workspace/.npm
+
+# ---------------------------------------------------------------- Playwright + Chromium
+# Playwright 官方支持 Ubuntu：install --with-deps 会装齐它自己列的系统依赖（apt）。
+# 浏览器落到 /opt/ms-playwright（a+rX），运行期不可写也能用。
+ENV PLAYWRIGHT_BROWSERS_PATH=/opt/ms-playwright
+RUN set -eux; \
+    npm install -g playwright@${PLAYWRIGHT_VERSION}; \
+    playwright install --with-deps chromium; \
+    chmod -R a+rX /opt/ms-playwright; \
+    rm -rf /var/lib/apt/lists/* /workspace/.npm
+
+# 中文字体：Playwright 只带部分，补齐 CJK / 日文 / emoji，避免无头渲染方块字
+RUN set -eux; \
+    apt-get update; \
+    apt-get install -y --no-install-recommends \
+        fonts-noto-cjk fonts-wqy-zenhei fonts-ipafont-gothic fonts-noto-color-emoji; \
+    fc-cache -f >/dev/null; \
+    rm -rf /var/lib/apt/lists/*
+
+# ---------------------------------------------------------------- Go + yq v4
+# yq 用 Go 模块代理自行编译（goproxy.cn，带 sumdb 校验），不依赖 GitHub 直连。
+RUN set -eux; \
+    curl -fsSL "https://mirrors.aliyun.com/golang/go${GO_VERSION}.linux-amd64.tar.gz" -o /tmp/go.tgz; \
+    tar -xzf /tmp/go.tgz -C /usr/local; \
+    rm -f /tmp/go.tgz; \
+    ln -sf /usr/local/go/bin/go /usr/local/bin/go; \
+    ln -sf /usr/local/go/bin/gofmt /usr/local/bin/gofmt; \
+    GOBIN=/usr/local/bin GOPATH=/tmp/gopath GOCACHE=/tmp/gocache GOPROXY=https://goproxy.cn,direct \
+      go install github.com/mikefarah/yq/v4@v${YQ_VERSION}; \
+    rm -rf /tmp/gopath /tmp/gocache /workspace/.cache/go-build; \
+    go version; yq --version
+
+# 构建期编译 yq 时 GOCACHE 指向 /tmp 并在同层清理，避免把 ~170MB Go build cache
+# 打进镜像；运行期 GOCACHE 仍指向 /workspace/.cache/go-build，首次 Go 构建为冷缓存。
+ENV GOPATH=/workspace/go \
+    GOCACHE=/workspace/.cache/go-build \
+    GOMODCACHE=/workspace/go/pkg/mod
+
+# ---------------------------------------------------------------- .NET 10 SDK
+# Rocky/EPEL 无此包；Ubuntu 24.04 走微软官方源。libicu74 已装，满足 .NET 10 要求。
+RUN set -eux; \
+    curl -fsSL https://packages.microsoft.com/config/ubuntu/24.04/packages-microsoft-prod.deb -o /tmp/ms.deb; \
+    dpkg -i /tmp/ms.deb; \
+    rm -f /tmp/ms.deb; \
+    apt-get update; \
+    apt-get install -y --no-install-recommends dotnet-sdk-10.0; \
+    rm -rf /var/lib/apt/lists/* /workspace/.dotnet /workspace/.nuget; \
+    dotnet --version
+
+ENV DOTNET_CLI_TELEMETRY_OPTOUT=1 \
+    DOTNET_NOLOGO=1 \
+    DOTNET_SKIP_FIRST_TIME_EXPERIENCE=1 \
+    DOTNET_CLI_HOME=/workspace/.dotnet \
+    NUGET_PACKAGES=/workspace/.nuget/packages \
+    PYTHONUSERBASE=/workspace/.local \
+    PIP_CACHE_DIR=/workspace/.cache/pip \
+    PIP_BREAK_SYSTEM_PACKAGES=1 \
+    PIP_USER=1
+
+RUN mkdir -p /workspace/.npm /workspace/.cache/pip /workspace/.dotnet /workspace/.nuget/packages /workspace/.local \
+ && chmod -R 0777 /workspace
+
+WORKDIR /workspace
+
+# 网关创建容器时会覆盖 cmd；独立运行时给一个常驻默认值
+CMD ["sleep", "infinity"]

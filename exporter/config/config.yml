@@ -1,0 +1,14 @@
+# cgw-exporter 配置
+# 监听地址：Prometheus 服务器需要能访问；生产建议只对 Prometheus 网段开放。
+listen: "0.0.0.0:18092"
+
+upstream:
+  # 网关只读快照端点（仅 loopback，不走 3010/CLB）
+  url: "http://127.0.0.1:18091/internal/exporter/snapshot"
+  timeout_ms: 8000
+  schema: "cgw.exporter.snapshot/v1"
+
+# 附加到所有指标上的固定标签（可选，保持低基数）
+labels:
+  environment: "prod"
+  service: "container-gateway"

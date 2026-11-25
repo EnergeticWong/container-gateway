@@ -1,0 +1,131 @@
+server:
+  port: ${GATEWAY_PORT:18090}
+  address: ${GATEWAY_HOST:0.0.0.0}
+  # 反向代理容器时需要较宽松的上限；exec/logs 走同步/SSE 返回
+  max-http-request-header-size: 64KB
+
+spring:
+  application:
+    name: container-gateway
+  threads:
+    virtual:
+      enabled: true
+  mvc:
+    problemdetails:
+      enabled: false
+
+logging:
+  level:
+    root: INFO
+    com.example.gateway: INFO
+    # docker-java 内部噪声较大
+    com.github.dockerjava: WARN
+
+management:
+  endpoints:
+    web:
+      exposure:
+        include: health,info
+  endpoint:
+    health:
+      show-details: never
+
+gateway:
+  # ---- 多节点（逗号分隔；单节点可只配 GATEWAY_DOCKER_HOST）----
+  # 形如: local=unix:///var/run/docker.sock
+  #       local=unix:///var/run/docker.sock,w1=tcp://192.0.2.11:2376;tlsVerify=true;certPath=/etc/container-gateway/tls/w1;proxyHost=192.0.2.11
+  nodes: ${GATEWAY_NODES:}
+  docker-host: ${GATEWAY_DOCKER_HOST:unix:///var/run/docker.sock}
+  tls-cert-path: ${GATEWAY_TLS_CERT_PATH:}
+  tls-verify: ${GATEWAY_TLS_VERIFY:false}
+  node-health-interval-ms: ${GATEWAY_NODE_HEALTH_INTERVAL_MS:5000}
+  node-probe-timeout-ms: ${GATEWAY_NODE_PROBE_TIMEOUT_MS:3000}
+  node-max-tasks: ${GATEWAY_NODE_MAX_TASKS:30}
+  max-streams-per-node: ${GATEWAY_MAX_STREAMS_PER_NODE:50}
+  docker-max-connections: ${GATEWAY_DOCKER_MAX_CONNECTIONS:100}
+  # exporter 只读快照端口（仅 loopback，供同机 cgw-exporter 抓取；0=关闭）
+  exporter-snapshot-port: ${GATEWAY_EXPORTER_SNAPSHOT_PORT:18091}
+
+  # ---- 鉴权 ----
+  # 格式: <token>:<clientId>[,<token>:<clientId>...]；留空则拒绝所有请求
+  tokens: ${GATEWAY_TOKENS:}
+
+  # ---- 镜像 ----
+  image-whitelist: ${GATEWAY_IMAGE_WHITELIST:}
+  allow-pull: ${GATEWAY_ALLOW_PULL:false}
+  prepull-images: ${GATEWAY_PREPULL_IMAGES:}
+
+  # ---- 宿主端口池 ----
+  port-range-start: ${PORT_RANGE_START:30000}
+  port-range-end: ${PORT_RANGE_END:30999}
+
+  # ---- 配额与限流 ----
+  max-containers: ${MAX_CONTAINERS:60}
+  max-per-owner: ${MAX_PER_OWNER:30}
+  default-ttl-seconds: ${DEFAULT_TTL_SECONDS:300}
+  max-ttl-seconds: ${MAX_TTL_SECONDS:86400}
+  default-memory-bytes: ${DEFAULT_MEMORY_BYTES:268435456}
+  max-memory-bytes: ${MAX_MEMORY_BYTES:4294967296}
+  default-cpus: ${DEFAULT_CPUS:1.0}
+  max-cpus: ${MAX_CPUS:4}
+  default-pids: ${DEFAULT_PIDS:256}
+  max-pids: ${MAX_PIDS:512}
+  min-memory-bytes: ${MIN_MEMORY_BYTES:16777216}
+  min-ttl-seconds: ${MIN_TTL_SECONDS:30}
+  max-ports-per-container: ${MAX_PORTS_PER_CONTAINER:16}
+  rate-limit-per-minute: ${RATE_LIMIT_PER_MINUTE:2000}
+  create-rate-limit-per-minute: ${CREATE_RATE_LIMIT_PER_MINUTE:60}
+  health-rate-limit-per-minute: ${HEALTH_RATE_LIMIT_PER_MINUTE:240}
+
+  # ---- 容器策略（HostConfig）----
+  network-mode: ${GATEWAY_NETWORK_MODE:bridge}
+  auto-remove: ${GATEWAY_AUTO_REMOVE:true}
+  cap-drop: ${GATEWAY_CAP_DROP:}
+  cap-add: ${GATEWAY_CAP_ADD:}
+  security-opts: ${GATEWAY_SECURITY_OPTS:no-new-privileges:true}
+  seccomp-profile: ${GATEWAY_SECCOMP_PROFILE:}
+  readonly-rootfs: ${GATEWAY_READONLY_ROOTFS:false}
+  tmpfs: ${GATEWAY_TMPFS:}
+  bind-mounts-enabled: ${GATEWAY_BIND_MOUNTS_ENABLED:false}
+
+  # ---- exec / 日志 / 代理 ----
+  exec-default-timeout-seconds: ${EXEC_DEFAULT_TIMEOUT_SECONDS:30}
+  exec-max-timeout-seconds: ${EXEC_MAX_TIMEOUT_SECONDS:600}
+  exec-max-output-bytes: ${EXEC_MAX_OUTPUT_BYTES:65536}
+  stream-heartbeat-ms: ${GATEWAY_STREAM_HEARTBEAT_MS:15000}
+  proxy-max-body-bytes: ${GATEWAY_PROXY_MAX_BODY_BYTES:8388608}
+  proxy-timeout-seconds: ${GATEWAY_PROXY_TIMEOUT_SECONDS:120}
+
+  # ---- TTL / 审计 ----
+  ttl-scan-interval-ms: ${TTL_SCAN_INTERVAL_MS:60000}
+  audit-log: ${GATEWAY_AUDIT_LOG:/opt/container-gateway/logs/audit.log}
+
+  # ---- 容器 HTTP 访问代理 ----
+  proxy-enabled: ${GATEWAY_PROXY_ENABLED:true}
+  advertise-host: ${GATEWAY_ADVERTISE_HOST:}
+  advertise-scheme: ${GATEWAY_ADVERTISE_SCHEME:http}
+  direct-host: ${GATEWAY_DIRECT_HOST:}
+
+  # ---- 文件收发（阶段 B）----
+  # 上传落到 file-upload-dir，下载/列举只允许 file-output-dir，二者都必须在 file-root 下
+  file-transfer-enabled: ${GATEWAY_FILE_TRANSFER_ENABLED:true}
+  file-root: ${GATEWAY_FILE_ROOT:/workspace}
+  file-upload-dir: ${GATEWAY_FILE_UPLOAD_DIR:/workspace/input}
+  file-output-dir: ${GATEWAY_FILE_OUTPUT_DIR:/workspace/out}
+  file-max-bytes: ${GATEWAY_FILE_MAX_BYTES:33554432}
+  file-max-total-bytes: ${GATEWAY_FILE_MAX_TOTAL_BYTES:67108864}
+  file-max-count: ${GATEWAY_FILE_MAX_COUNT:64}
+
+  # ---- 治理：创建幂等 / 业务上下文 ----
+  create-idempotency-enabled: ${GATEWAY_CREATE_IDEMPOTENCY_ENABLED:true}
+  create-idempotency-ttl-seconds: ${GATEWAY_CREATE_IDEMPOTENCY_TTL_SECONDS:600}
+  require-business-context: ${GATEWAY_REQUIRE_BUSINESS_CONTEXT:false}
+
+  # ---- 加固：容器运行用户（留空=镜像默认用户）----
+  run-as-user: ${GATEWAY_RUN_AS_USER:}
+
+  # ---- 加固：网关托管工作区挂载 ----
+  # 非空启用：每容器在宿主该目录下建独立子目录、chown 到 run-as-user，rw bind 到 file-root，
+  # 销毁/回收时清理。用于「非 root + 只读 RootFS + 文件 API」三者并存。仅支持本机节点。
+  # 该目录须存在且加入 systemd ReadWritePaths；启用后 GATEWAY_TMPFS 不得再包含 file-root。
+  workspace-host-dir: ${GATEWAY_WORKSPACE_HOST_DIR:}

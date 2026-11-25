@@ -1,0 +1,43 @@
+# 构建产物
+target/
+**/target/
+*.class
+*.jar
+*.war
+
+# 归档与备份
+*.tar.gz
+*.tgz
+*.zip
+*.bak
+*.orig
+backups/
+
+# 本地密钥与运行时配置（禁止入库）
+*.env
+*.env.*
+!config/gateway.env.example
+!config/gateway.env.recommended
+.env
+.env.*
+*.pem
+*.key
+docker-remote-switch-*/
+
+# 日志与临时文件
+*.log
+*.tmp
+*.swp
+.DS_Store
+Thumbs.db
+
+# Maven shade 插件中间文件
+dependency-reduced-pom.xml
+
+# IDE
+.idea/
+.vscode/
+*.iml
+.classpath
+.project
+.settings/

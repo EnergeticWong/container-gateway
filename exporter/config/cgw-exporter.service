@@ -1,0 +1,30 @@
+[Unit]
+Description=cgw-exporter (Prometheus exporter for container-gateway)
+Documentation=file:/etc/cgw-exporter/README.md
+After=network-online.target container-gateway.service
+Wants=network-online.target
+
+[Service]
+Type=simple
+User=cgw
+Group=cgw
+ExecStart=/usr/lib/jvm/temurin-21/bin/java -jar /usr/local/bin/cgw-exporter.jar --config.file=/etc/cgw-exporter/config.yml
+Restart=on-failure
+RestartSec=5s
+TimeoutStopSec=10s
+
+# 加固：exporter 只需要访问本机回环与出站 TCP
+NoNewPrivileges=true
+PrivateTmp=true
+ProtectSystem=strict
+ProtectHome=true
+ProtectKernelTunables=true
+ProtectKernelModules=true
+ProtectControlGroups=true
+RestrictAddressFamilies=AF_INET AF_INET6
+MemoryMax=128M
+CPUQuota=20%
+LimitNOFILE=4096
+
+[Install]
+WantedBy=multi-user.target

@@ -1,0 +1,69 @@
+{
+  "schema": "cgw.exporter.snapshot/v1",
+  "generated_at_ms": 1762400000000,
+  "gateway": {"version":"1.0.0","ready":true,"managed_containers":12,
+              "max_containers":1000,"index_containers":12,
+              "audit_write_failures":0,"managed_refresh_failures":2},
+  "nodes": [
+    {"id":"local","up":true,"assigned":5,"inflight":1,"capacity":30,"docker_running":9,
+     "active_streams":2,"stream_capacity":200,"port_used":7,"port_capacity":1000,
+     "probe_duration_seconds":0.012,"last_probe_age_seconds":0.9,"probe_reason":""},
+    {"id":"w1","up":false,"assigned":0,"inflight":0,"capacity":30,"docker_running":2,
+     "active_streams":0,"stream_capacity":200,"port_used":0,"port_capacity":1000,
+     "probe_duration_seconds":0.8,"last_probe_age_seconds":0.4,"probe_reason":"tls"}
+  ],
+  "jobs": [{"name":"ttl_reaper","runs":100,"failures":1,
+            "last_success_ms":1762399990000,"last_duration_seconds":0.035}],
+  "counters": {
+    "http_requests": [{"action":"create","result":"ok","node":"local","value":123},
+                      {"action":"create","result":"error","node":"w1","value":4}],
+    "http_errors": [{"action":"create","error_code":"QUOTA_EXCEEDED","value":4}],
+    "auth_failures": [{"reason":"unauthorized","value":2}],
+    "rate_limit_rejections": [{"scope":"global","value":1}],
+    "quota_rejections": [{"reason":"owner","value":3}],
+    "docker_calls": [{"op":"create","node":"local","result":"error","reason":"timeout","value":1},
+                     {"op":"create","node":"local","result":"ok","reason":"","value":120}],
+    "exec": [{"mode":"stream","node":"local","result":"ok","value":5}],
+    "exec_timeouts": [{"mode":"stream","node":"local","value":1}],
+    "exec_truncated": [{"mode":"stream","node":"local","value":1}],
+    "exec_nonzero": [{"mode":"stream","node":"local","value":2}],
+    "proxy_requests": [{"method":"GET","status_class":"2xx","value":900}],
+    "proxy_errors": [{"reason":"connect","value":1}],
+    "file": [{"direction":"upload","result":"ok","value":7}],
+    "file_bytes": [{"direction":"upload","value":5242880}],
+    "file_rejections": [{"reason":"too_large","value":1}],
+    "port_reclaimed": [{"node":"local","value":3}],
+    "node_probe_failures": [{"node":"w1","reason":"tls","value":2}],
+    "job_runs": [{"job":"ttl_reaper","result":"ok","value":99},
+                 {"job":"ttl_reaper","result":"error","value":1}]
+  },
+  "histograms": {
+    "http_request_duration_seconds": [
+      {"action":"create","node":"local",
+       "bounds":[0.01,0.025,0.05,0.1,0.25,0.5,1,2.5,5,10,30],
+       "bucket_counts":[1,2,5,9,3,0,0,0,0,0,0,0],"count":20,"sum":12.3}
+    ],
+    "docker_call_duration_seconds": [
+      {"op":"create","node":"local",
+       "bounds":[0.01,0.05,0.1,0.25,0.5,1,2.5,5,10,30,60,120],
+       "bucket_counts":[0,1,2,0,0,0,0,0,0,0,0,0,0],"count":3,"sum":0.4}
+    ],
+    "exec_duration_seconds": [
+      {"mode":"stream","node":"local",
+       "bounds":[0.1,0.5,1,2.5,5,10,30,60,120,300,600],
+       "bucket_counts":[0,2,3,0,0,0,0,0,0,0,0,0],"count":5,"sum":3.1}
+    ],
+    "proxy_duration_seconds": [
+      {"bounds":[0.01,0.05,0.1,0.25,0.5,1,2.5,5,10,30,60,120],
+       "bucket_counts":[100,400,300,100,0,0,0,0,0,0,0,0,0],"count":900,"sum":44.2}
+    ],
+    "node_probe_duration_seconds": [
+      {"node":"local","bounds":[0.005,0.01,0.025,0.05,0.1,0.25,0.5,1,2.5,5],
+       "bucket_counts":[1,10,20,5,0,0,0,0,0,0,0],"count":36,"sum":1.2}
+    ],
+    "job_duration_seconds": [
+      {"job":"ttl_reaper","bounds":[0.01,0.1,0.5,1,5,10,30,60],
+       "bucket_counts":[0,100,0,0,0,0,0,0,0],"count":100,"sum":3.5}
+    ]
+  }
+}
